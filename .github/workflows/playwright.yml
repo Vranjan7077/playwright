@@ -56,7 +56,7 @@ jobs:
       - run: npx playwright test --grep @smoke --project=chromium
         env:
           CI: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: smoke-failure-artifacts
@@ -95,13 +95,13 @@ jobs:
         env:
           CI: true
           SHARD_INDEX: ${{ matrix.shard }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: blob-report-${{ matrix.shard }}
           path: blob-report/
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: test-results-${{ matrix.shard }}
@@ -128,7 +128,7 @@ jobs:
           merge-multiple: true
       - name: Merge into a single HTML report
         run: npx playwright merge-reports --reporter html ./all-blob-reports
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: playwright-html-report
           path: playwright-report/
