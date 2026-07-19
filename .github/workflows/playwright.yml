@@ -1,0 +1,135 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Full regression nightly at 03:17 UTC - off-peak, off-the-hour to avoid
+    # GitHub's scheduling pile-up around :00.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Override BASE_URL (e.g. a deploy-preview URL)'
+        required: false
+        default: ''
+
+env:
+  BASE_URL: ${{ github.event.inputs.base_url || 'https://vranjan.dev' }}
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  # Fast feedback loop for pull requests: smoke tests only, chromium only.
+  smoke:
+    name: Smoke (PR fast path)
+    if: github.event_name == 'pull_request'
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium
+      - run: npx playwright test --grep @smoke --project=chromium
+        env:
+          CI: true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-failure-artifacts
+          path: |
+            test-results/
+            blob-report/
+          retention-days: 7
+
+  # Full cross-browser/device regression: on every push to main, nightly,
+  # and on manual dispatch. Sharded 4-way to keep wall-clock time reasonable.
+  regression:
+    name: Regression (shard ${{ matrix.shard }}/4)
+    if: github.event_name != 'pull_request'
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install browsers
+        run: npx playwright install --with-deps
+      - name: Run Playwright tests (shard ${{ matrix.shard }}/4)
+        run: npx playwright test --shard=${{ matrix.shard }}/4
+        env:
+          CI: true
+          SHARD_INDEX: ${{ matrix.shard }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results-${{ matrix.shard }}
+          path: test-results/
+          retention-days: 7
+
+  merge-reports:
+    name: Merge HTML report
+    if: always() && github.event_name != 'pull_request'
+    needs: regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Download all blob reports
+        uses: actions/download-artifact@v4
+        with:
+          pattern: blob-report-*
+          path: all-blob-reports
+          merge-multiple: true
+      - name: Merge into a single HTML report
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+      - uses: actions/upload-artifact@v4
+        with:
+          name: playwright-html-report
+          path: playwright-report/
+          retention-days: 30
