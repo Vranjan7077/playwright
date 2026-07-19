@@ -1,0 +1,51 @@
+name: Flaky test in this suite
+description: A test fails intermittently without a corresponding real site regression
+labels: ['flaky-test', 'test-infra']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: rule out local resource contention first (see the
+        README's Troubleshooting section) - re-run the specific file with
+        `npx playwright test <file> --workers=1` a few times.
+
+  - type: input
+    id: test-file
+    attributes:
+      label: Test file / name
+      placeholder: 'tests/content/blog-search.spec.ts - "typing a query surfaces matching results"'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it flake?
+      options:
+        - Local only
+        - CI only
+        - Both local and CI
+    validations:
+      required: true
+
+  - type: textarea
+    id: failure-mode
+    attributes:
+      label: How it fails
+      description: Error message, timeout, or wrong assertion value. Paste from the HTML report if possible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: frequency
+    attributes:
+      label: Frequency
+      description: e.g. "1 in 5 runs", "only under --workers > 4", "only on webkit"
+    validations:
+      required: true
+
+  - type: textarea
+    id: trace
+    attributes:
+      label: Trace / video link
+      description: Attach or link the trace.zip / video from a failing run if available.

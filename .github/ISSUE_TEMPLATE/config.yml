@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Framework documentation
+    url: https://github.com/Vranjan7077/playwright/blob/main/README.md
+    about: Architecture, fixtures, running/debugging tests, and troubleshooting.

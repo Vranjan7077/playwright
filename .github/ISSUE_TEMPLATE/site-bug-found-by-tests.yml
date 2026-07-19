@@ -1,0 +1,54 @@
+name: Site bug found by the test suite
+description: Report a real defect on vranjan.dev that this Playwright suite surfaced (accessibility violation, broken interaction, etc.)
+labels: ['bug', 'found-by-tests']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when a test in this repo caught a genuine issue on the live
+        site - e.g. an axe violation added to `test-data/a11y-known-issues.ts`,
+        or a `test.fixme`'d test. See the README's "Known findings" section
+        for the ones already tracked in code.
+
+  - type: input
+    id: test-reference
+    attributes:
+      label: Test / rule reference
+      description: File and test name, or axe rule ID, that surfaced this.
+      placeholder: 'tests/content/blog-search.spec.ts - "closes via the close button...", or axe rule: color-contrast'
+    validations:
+      required: true
+
+  - type: input
+    id: pages-affected
+    attributes:
+      label: Page(s) affected
+      placeholder: '/, /work/, /blog/, /contact/, or a specific /blog/post/.../ URL'
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What's wrong
+      description: What a real user would experience, not just the assertion that failed.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical (blocks a core task)
+        - Serious (real user impact, workaround exists)
+        - Moderate
+        - Minor / cosmetic
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot / trace
+      description: Attach the Playwright HTML report screenshot, trace, or a manual screenshot if you have one.
