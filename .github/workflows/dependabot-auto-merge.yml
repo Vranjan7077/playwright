@@ -1,0 +1,34 @@
+name: Dependabot auto-merge
+
+# Patch/minor bumps (dev tooling, GitHub Actions versions) are low-risk and
+# already gated by the normal lint-and-typecheck + smoke checks - auto-merge
+# once those pass. Major bumps (an ESLint 9->10, a TypeScript major, etc.)
+# are left for manual review; they've broken things before.
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto-merge low-risk Dependabot PRs
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+      - name: Enable auto-merge for patch/minor updates
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

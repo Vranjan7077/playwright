@@ -1,0 +1,178 @@
+name: Playwright Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Full regression nightly at 03:17 UTC - off-peak, off-the-hour to avoid
+    # GitHub's scheduling pile-up around :00.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Override BASE_URL (e.g. a deploy-preview URL)'
+        required: false
+        default: ''
+
+env:
+  BASE_URL: ${{ github.event.inputs.base_url || 'https://vranjan.dev' }}
+
+jobs:
+  lint-and-typecheck:
+    name: Lint & typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  # Fast feedback loop for pull requests: smoke tests only, chromium only.
+  smoke:
+    name: Smoke (PR fast path)
+    if: github.event_name == 'pull_request'
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install browsers
+        run: npx playwright install --with-deps chromium
+      - run: npx playwright test --grep @smoke --project=chromium
+        env:
+          CI: true
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: smoke-failure-artifacts
+          path: |
+            test-results/
+            blob-report/
+          retention-days: 7
+
+  # Full cross-browser/device regression: on every push to master, nightly,
+  # and on manual dispatch. Sharded 4-way to keep wall-clock time reasonable.
+  regression:
+    name: Regression (shard ${{ matrix.shard }}/4)
+    if: github.event_name != 'pull_request'
+    needs: lint-and-typecheck
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install browsers
+        run: npx playwright install --with-deps
+      - name: Run Playwright tests (shard ${{ matrix.shard }}/4)
+        run: npx playwright test --shard=${{ matrix.shard }}/4
+        env:
+          CI: true
+          SHARD_INDEX: ${{ matrix.shard }}
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: blob-report-${{ matrix.shard }}
+          path: blob-report/
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: test-results-${{ matrix.shard }}
+          path: test-results/
+          retention-days: 7
+
+  merge-reports:
+    name: Merge HTML report
+    if: always() && github.event_name != 'pull_request'
+    needs: regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Download all blob reports
+        uses: actions/download-artifact@v8
+        with:
+          pattern: blob-report-*
+          path: all-blob-reports
+          merge-multiple: true
+      - name: Merge into a single HTML report
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+      - uses: actions/upload-artifact@v7
+        with:
+          name: playwright-html-report
+          path: playwright-report/
+          retention-days: 30
+
+  # Surfaces a failed regression run as a tracked issue instead of something
+  # only visible if someone happens to check the Actions tab. Skipped for PRs
+  # (that's what the required check is for) and deduped so a still-broken
+  # site doesn't get a fresh issue every single day.
+  file-issue-on-failure:
+    name: File issue on regression failure
+    if: needs.regression.result == 'failure'
+    needs: regression
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Ensure label exists
+        run: gh label create regression-failure --color b60205 --description "Auto-filed by the regression workflow" --force
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+      - name: Check for an already-open failure issue
+        id: check
+        run: |
+          existing=$(gh issue list --label regression-failure --state open --json number --jq '.[0].number // empty')
+          echo "existing=$existing" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+      - name: File issue
+        if: steps.check.outputs.existing == ''
+        run: |
+          gh issue create \
+            --title "Regression suite failed - $(date -u +%Y-%m-%d)" \
+            --label regression-failure \
+            --body "$(cat <<BODY
+          The regression suite failed on \`${{ github.ref_name }}\` (triggered by \`${{ github.event_name }}\`).
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Filed automatically because at least one shard failed. Closing this issue lets the next failed run file a new one - it won't reopen or duplicate while this stays open.
+          BODY
+          )"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
