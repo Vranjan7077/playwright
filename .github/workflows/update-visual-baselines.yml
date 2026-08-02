@@ -41,7 +41,7 @@ jobs:
         env:
           CI: true
       - name: Open PR if baselines changed
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           commit-message: 'Update visual baselines for production content changes'
           title: 'Update visual regression baselines'
