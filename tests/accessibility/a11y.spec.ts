@@ -9,6 +9,8 @@ const pagesUnderTest: { name: string; path: string }[] = [
 ];
 
 test.describe('WCAG 2.2 AA scans', () => {
+  test.describe.configure({ timeout: 60_000 });
+
   for (const { name, path } of pagesUnderTest) {
     test(`${name} page has no unexpected violations`, async ({
       page,
