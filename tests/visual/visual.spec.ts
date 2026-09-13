@@ -24,7 +24,12 @@ test.describe('Visual regression', () => {
     const footer = page.locator('footer.footer');
     await footer.scrollIntoViewIfNeeded();
     await expect(footer).toHaveScreenshot('footer.png', {
-      mask: [page.locator('#loadtime'), page.locator('#relative-build-time')],
+      mask: [
+        page.locator('#loadtime'),
+        page.locator('#relative-build-time'),
+        page.locator('.footer__lighthouse'),
+        page.locator('#consent-banner'),
+      ],
     });
   });
 
